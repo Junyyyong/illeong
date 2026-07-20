@@ -7,7 +7,9 @@
   <script src="./vendor/aframe.min.js"></script>
   <script type="module" src="./vendor/mindar/mindar-image-aframe.prod.js"></script>
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; font-family: -apple-system, "Apple SD Gothic Neo", sans-serif; background: #000; }
+    /* 배경은 html에만 — body에 칠하면 MindAR의 카메라 화면(z-index:-2)이 가려진다 */
+    html { background: #000; }
+    html, body { margin: 0; height: 100%; overflow: hidden; font-family: -apple-system, "Apple SD Gothic Neo", sans-serif; }
     #header {
       position: fixed; top: 0; left: 0; right: 0; z-index: 5;
       padding: calc(16px + env(safe-area-inset-top)) 16px 28px;
