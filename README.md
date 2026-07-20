@@ -25,7 +25,15 @@ npm run serve   # → http://localhost:8642
 ※ 핸드폰 카메라 테스트는 HTTPS가 필요하므로 배포 후에 한다.
 
 ### 4. 배포
-`site/` 폴더를 GitHub Pages나 Vercel 등 정적 호스팅에 올리면 끝.
+배포 주소: **https://junyyyong.github.io/illeong/** (GitHub Pages, 저장소 [Junyyyong/illeong](https://github.com/Junyyyong/illeong))
+
+재료를 바꾼 뒤에는:
+```bash
+npm run build
+git add -A && git commit -m "재료 갱신"
+git push                 # main 브랜치(소스) 갱신
+npm run deploy           # site/ → gh-pages 브랜치로 발행
+```
 배포 URL을 QR코드로 만들어 논문에 싣는다.
 
 ## 구조
