@@ -1,0 +1,13 @@
+{
+  "name": "artivive-thesis-ar",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "serve": "node tools/serve.mjs"
+  },
+  "dependencies": {
+    "mind-ar": "^1.2.5"
+  }
+}
