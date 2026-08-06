@@ -247,6 +247,39 @@
       im.src = url;
     });
 
+    // 컴파일 입력용으로만 이미지를 줄인다(저장된 원본은 그대로 남는다).
+    // 컴파일 시간은 픽셀 수에 비례하므로, 긴 변을 이 값으로 맞추면 크게 빨라진다.
+    // 인식은 원본 대비 상대 좌표로 이뤄지므로 이 정도 해상도면 인식률 차이가 거의 없다.
+    const COMPILE_MAX_EDGE = 1024;
+
+    async function shrinkForCompile(img) {
+      const longEdge = Math.max(img.naturalWidth, img.naturalHeight);
+      if (longEdge <= COMPILE_MAX_EDGE) return img;   // 이미 작으면 그대로 사용
+
+      const scale = COMPILE_MAX_EDGE / longEdge;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.naturalWidth * scale);
+      canvas.height = Math.round(img.naturalHeight * scale);
+      const ctx = canvas.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise((res) => canvas.toBlob(res, "image/png"));
+      const url = URL.createObjectURL(blob);
+      try {
+        return await new Promise((res, rej) => {
+          const im = new Image();
+          im.onload = () => res(im);
+          im.onerror = () => rej(new Error("축소 이미지 생성 실패"));
+          im.src = url;
+        });
+      } finally {
+        // Image가 디코딩을 마친 뒤 해제 (compileImageTargets는 픽셀만 읽으므로 안전)
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      }
+    }
+
     $("#publish-btn").addEventListener("click", async () => {
       const btn = $("#publish-btn"); const prog = $("#pub-progress"); const note = $("#pub-note");
       if (!window.MINDAR || !window.MINDAR.IMAGE || !window.MINDAR.IMAGE.Compiler) {
@@ -259,9 +292,13 @@
         if (!rows.length) { note.textContent = "발행할 도판이 없습니다."; return; }
 
         const imgs = [];
+        let shrunk = 0;
         for (const r of rows) {
-          note.textContent = `이미지 불러오는 중… (${imgs.length + 1}/${rows.length})`;
-          imgs.push(await loadImage(publicUrl(r.image_path)));
+          note.textContent = `이미지 준비 중… (${imgs.length + 1}/${rows.length})`;
+          const original = await loadImage(publicUrl(r.image_path));
+          const forCompile = await shrinkForCompile(original);
+          if (forCompile !== original) shrunk++;
+          imgs.push(forCompile);
         }
 
         // 컴파일은 도판 1장당 수십 초까지 걸린다(정상). 진행률로 살아있음을 계속 보여준다.
@@ -292,7 +329,9 @@
         }
 
         prog.value = 100;
-        note.textContent = `발행 완료 — 도판 ${rows.length}개. 뷰어에서 바로 사용할 수 있습니다.`;
+        note.textContent = `발행 완료 — 도판 ${rows.length}개`
+          + (shrunk ? ` (${shrunk}개는 컴파일용으로 축소해 시간을 줄였습니다)` : "")
+          + `. 뷰어에서 바로 사용할 수 있습니다.`;
         toast("발행 완료");
         await loadList();
       } catch (err) {
