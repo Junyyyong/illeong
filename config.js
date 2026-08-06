@@ -6,8 +6,8 @@
 //    · anon public key → SUPABASE_ANON_KEY
 //  (anon 키는 공개돼도 안전합니다. 실제 보안은 RLS 정책이 담당합니다.)
 // ─────────────────────────────────────────────────────────────
-window.SUPABASE_URL = "https://ybmzwmbnxadkvjyqzctl.supabase.co";
-window.SUPABASE_ANON_KEY = "YOUR-ANON-PUBLIC-KEY";
+window.SUPABASE_URL = "https://xpclgvzcypzvzgnewcem.supabase.co";
+window.SUPABASE_ANON_KEY = "sb_publishable_WM97loHp6QhArMSfRDajpw_Im6An97-";
 
 // 저장소(버킷) 이름 — SUPABASE_SETUP.md 대로 만들었다면 그대로 두세요.
 window.MEDIA_BUCKET = "media";
