@@ -40,17 +40,29 @@ npm run serve   # → http://localhost:8642
 ```
 ※ 카메라는 HTTPS에서만 켜지므로, 실제 카메라 테스트는 배포본(HTTPS)에서 한다.
 
-## 배포
-배포 주소: **https://junyyyong.github.io/illeong/** (GitHub Pages, 저장소 [Junyyyong/illeong](https://github.com/Junyyyong/illeong))
+## 배포 (Vercel)
 
+저장소를 Vercel에 한 번 연결해두면, 이후 `git push` 할 때마다 자동으로 배포된다.
+설정값은 `vercel.json`에 들어 있으므로 대시보드에서 따로 만질 게 없다
+(빌드 없음, `site/` 폴더를 그대로 서빙).
+
+최초 연결:
+1. https://vercel.com 에 GitHub 계정으로 로그인
+2. **Add New… → Project** → 이 저장소 **Import**
+3. 설정은 건드리지 말고 **Deploy** (vercel.json이 알아서 적용됨)
+
+이후에는:
 ```bash
 git add -A && git commit -m "..."
-git push          # main 브랜치(소스) 갱신
-npm run deploy    # site/ → gh-pages 브랜치로 발행
+git push          # → Vercel이 자동 배포
 ```
 
-> 콘텐츠(이미지·영상)를 바꿀 때는 재배포가 필요 없다 — 관리자 페이지에서
-> 올리면 끝. 재배포는 코드(뷰어/관리자 화면 자체)를 바꿨을 때만 한다.
+> 콘텐츠(이미지·영상)를 바꿀 때는 재배포가 아예 필요 없다 — 관리자 페이지에서
+> 올리면 끝. 재배포는 코드(뷰어/관리자 화면 자체)를 바꿨을 때만 일어난다.
+
+<sub>※ 원래 GitHub Pages(`junyyyong.github.io/illeong`)로 배포했으나, Pages의 배포 단계가
+`deployment_queued` 상태에서 진행되지 않는 문제가 있어 Vercel로 옮겼다.
+`npm run deploy`(gh-pages 발행) 스크립트는 참고용으로 남겨둔다.</sub>
 
 ## 구조
 ```
