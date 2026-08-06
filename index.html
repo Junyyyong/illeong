@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
   <title>Web Viewer</title>
+  <script src="./config.js"></script>
   <script src="./vendor/aframe.min.js"></script>
   <script type="module" src="./vendor/mindar/mindar-image-aframe.prod.js"></script>
   <style>
@@ -23,6 +24,17 @@
       align-items: center; justify-content: center; text-align: center;
       background: #111; color: #fff; padding: 24px; line-height: 1.7;
     }
+    #splash {
+      position: fixed; inset: 0; z-index: 20; display: flex;
+      align-items: center; justify-content: center; flex-direction: column; gap: 18px;
+      background: #111; color: #fff; text-align: center; padding: 24px;
+    }
+    #splash button {
+      appearance: none; border: 0; border-radius: 999px; cursor: pointer;
+      padding: 14px 32px; font-size: 16px; font-weight: 700;
+      background: #fff; color: #111;
+    }
+    #splash .hint { font-size: 13px; opacity: .7; max-width: 260px; line-height: 1.6; }
     .a-enter-vr, .a-enter-ar { display: none !important; }
   </style>
 </head>
@@ -31,26 +43,19 @@
     <h1>Web Viewer</h1>
     <p>카메라로 사진을 인식시키세요</p>
   </div>
+
   <div id="message"></div>
 
-  <a-scene mindar-image="imageTargetSrc: ./targets.mind; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 0.001"
-           color-space="sRGB" renderer="colorManagement: true" embedded
-           vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
-    <a-assets>
-      <video id="vid0" src="./videos/01.mp4" preload="auto" loop playsinline webkit-playsinline crossorigin="anonymous"></video>
-      <video id="vid1" src="./videos/02.mp4" preload="auto" loop playsinline webkit-playsinline crossorigin="anonymous"></video>
-    </a-assets>
-    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-      <a-entity mindar-image-target="targetIndex: 0" ar-video="video: #vid0">
-        <a-video src="#vid0" position="0 0 0" width="1" height="1.4883"></a-video>
-      </a-entity>
-      <a-entity mindar-image-target="targetIndex: 1" ar-video="video: #vid1">
-        <a-video src="#vid1" position="0 0 0" width="1" height="1.3565"></a-video>
-      </a-entity>
-  </a-scene>
+  <div id="splash">
+    <div class="hint" id="splash-hint">불러오는 중…</div>
+    <button id="start-btn" style="display:none">카메라 시작</button>
+  </div>
+
+  <div id="scene-root"></div>
 
   <script>
-    // 타깃을 찾으면 영상 재생(소리 재생이 막히면 무음으로라도), 놓치면 일시정지
+    // 타깃을 찾으면 영상 재생(소리 재생이 막히면 무음으로라도), 놓치면 일시정지.
+    // A-Frame 컴포넌트는 씬이 주입되기 전에 미리 등록해 둔다.
     AFRAME.registerComponent("ar-video", {
       schema: { video: { type: "selector" } },
       init() {
@@ -65,6 +70,72 @@
         });
       },
     });
+  </script>
+
+  <script type="module">
+    const $ = (sel) => document.querySelector(sel);
+    const showMessage = (text) => {
+      $("#splash").style.display = "none";
+      const m = $("#message");
+      m.style.display = "flex";
+      m.textContent = text;
+    };
+    const escAttr = (s) => String(s).replace(/"/g, "&quot;");
+
+    // 설정 확인
+    if (!window.SUPABASE_URL || window.SUPABASE_URL.includes("YOUR-PROJECT")) {
+      showMessage("아직 Supabase 접속 정보가 설정되지 않았습니다. (site/config.js)");
+      throw new Error("config.js 미설정");
+    }
+
+    let sb;
+    try {
+      const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+      sb = createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+    } catch (e) {
+      showMessage("네트워크 오류로 초기화에 실패했습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.");
+      throw e;
+    }
+
+    const bucket = window.MEDIA_BUCKET || "media";
+    const publicUrl = (path) => sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+
+    // 발행된 타깃 목록 불러오기 (mind_index 순서 = targets.mind 안의 순서)
+    const { data: rows, error } = await sb
+      .from("targets")
+      .select("*")
+      .not("mind_index", "is", null)
+      .order("mind_index", { ascending: true });
+
+    if (error) { showMessage("데이터를 불러오지 못했습니다: " + error.message); throw error; }
+    if (!rows || rows.length === 0) {
+      showMessage("아직 등록된 도판이 없습니다. 관리자 페이지에서 이미지를 추가한 뒤 ‘발행’해 주세요.");
+      throw new Error("등록된 타깃 없음");
+    }
+
+    const mindUrl = publicUrl("targets.mind");
+
+    // 씬 구성
+    const assets = rows.map((r, i) =>
+      `<video id="vid${i}" src="${escAttr(publicUrl(r.video_path))}" preload="auto" loop playsinline webkit-playsinline crossorigin="anonymous"></video>`
+    ).join("\n      ");
+
+    const entities = rows.map((r, i) =>
+      `<a-entity mindar-image-target="targetIndex: ${r.mind_index}" ar-video="video: #vid${i}">
+        <a-video src="#vid${i}" position="0 0 0" width="1" height="${Number(r.aspect || 1).toFixed(4)}"></a-video>
+      </a-entity>`
+    ).join("\n      ");
+
+    const sceneHTML = `
+    <a-scene mindar-image="imageTargetSrc: ${escAttr(mindUrl)}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 0.001"
+             color-space="sRGB" renderer="colorManagement: true" embedded
+             vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+      <a-assets>
+      ${assets}
+      </a-assets>
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+      ${entities}
+    </a-scene>`;
 
     // 첫 터치에서 소리 재생 제한 해제 (iOS 등)
     const unlock = () => {
@@ -77,13 +148,21 @@
         v.muted = false;
       }
     };
-    document.addEventListener("pointerdown", unlock);
 
-    document.querySelector("a-scene").addEventListener("arError", () => {
-      const msg = document.getElementById("message");
-      msg.style.display = "flex";
-      msg.textContent = "카메라를 켤 수 없습니다. 브라우저의 카메라 권한을 허용한 뒤 새로고침해 주세요.";
-    });
+    const startAR = () => {
+      $("#splash").style.display = "none";
+      $("#scene-root").innerHTML = sceneHTML;
+      document.addEventListener("pointerdown", unlock);
+      $("#scene-root").querySelector("a-scene").addEventListener("arError", () => {
+        showMessage("카메라를 켤 수 없습니다. 브라우저의 카메라 권한을 허용한 뒤 새로고침해 주세요.");
+      });
+    };
+
+    // 카메라·소리 시작은 사용자 제스처가 있어야 안정적(iOS). 버튼 한 번으로 시작.
+    $("#splash-hint").textContent = "버튼을 누르면 카메라가 켜지고 도판 인식이 시작됩니다.";
+    const btn = $("#start-btn");
+    btn.style.display = "";
+    btn.addEventListener("click", startAR, { once: true });
   </script>
 </body>
 </html>
