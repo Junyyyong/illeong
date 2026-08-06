@@ -4,11 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node tools/build.mjs",
     "serve": "node tools/serve.mjs",
     "deploy": "git push origin $(git subtree split --prefix=site HEAD):gh-pages --force"
-  },
-  "dependencies": {
-    "mind-ar": "^1.2.5"
   }
 }

@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Web Viewer — 관리자</title>
+  <script src="./config.js"></script>
+  <!-- 브라우저에서 targets.mind 를 컴파일하기 위한 MindAR 컴파일러 -->
+  <script type="module" src="./vendor/mindar/mindar-image.prod.js"></script>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, "Apple SD Gothic Neo", "Segoe UI", sans-serif;
+      background: #f4f4f5; color: #18181b; line-height: 1.5;
+    }
+    @media (prefers-color-scheme: dark) { body { background: #18181b; color: #f4f4f5; } }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; background: #111; color: #fff;
+    }
+    header h1 { margin: 0; font-size: 16px; }
+    header .sp { flex: 1; }
+    main { max-width: 720px; margin: 0 auto; padding: 20px; }
+    .card {
+      background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 18px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    }
+    @media (prefers-color-scheme: dark) { .card { background: #27272a; box-shadow: none; } }
+    .card h2 { margin: 0 0 12px; font-size: 15px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+    input[type=text], input[type=email], input[type=password] {
+      width: 100%; padding: 10px 12px; border: 1px solid #d4d4d8; border-radius: 8px;
+      font-size: 14px; background: transparent; color: inherit;
+    }
+    input[type=file] { font-size: 13px; }
+    button {
+      appearance: none; border: 0; border-radius: 8px; cursor: pointer;
+      padding: 11px 18px; font-size: 14px; font-weight: 700; background: #111; color: #fff;
+    }
+    button.secondary { background: #e4e4e7; color: #18181b; }
+    button.danger { background: #ef4444; color: #fff; padding: 7px 12px; font-size: 13px; }
+    button:disabled { opacity: .5; cursor: default; }
+    .row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid #e4e4e7; }
+    .row:first-child { border-top: 0; }
+    .row img { width: 54px; height: 54px; object-fit: cover; border-radius: 8px; background: #ddd; }
+    .row .meta { flex: 1; min-width: 0; }
+    .row .meta b { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row .meta small { opacity: .65; font-size: 12px; }
+    .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #dcfce7; color: #166534; }
+    .badge.pending { background: #fef9c3; color: #854d0e; }
+    #status {
+      position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+      background: #111; color: #fff; padding: 10px 18px; border-radius: 999px;
+      font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 50;
+      max-width: 90vw;
+    }
+    #status.show { opacity: 1; }
+    .muted { opacity: .65; font-size: 13px; }
+    progress { width: 100%; height: 8px; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Web Viewer · 관리자</h1>
+    <div class="sp"></div>
+    <button id="logout" class="secondary hidden">로그아웃</button>
+  </header>
+
+  <main>
+    <!-- 로그인 -->
+    <section id="login-view" class="card hidden">
+      <h2>관리자 로그인</h2>
+      <form id="login-form">
+        <label>이메일</label>
+        <input type="email" id="email" autocomplete="username" required />
+        <label>비밀번호</label>
+        <input type="password" id="password" autocomplete="current-password" required />
+        <div style="margin-top:16px"><button type="submit">로그인</button></div>
+      </form>
+      <p class="muted" id="login-error" style="color:#ef4444; margin-top:12px"></p>
+    </section>
+
+    <!-- 관리 -->
+    <div id="admin-view" class="hidden">
+      <section class="card">
+        <h2>도판 추가</h2>
+        <form id="add-form">
+          <label>이름 (구분용, 예: 3장-그림2)</label>
+          <input type="text" id="t-name" placeholder="선택 사항" />
+          <label>도판 이미지 (인식할 사진)</label>
+          <input type="file" id="t-image" accept="image/*" required />
+          <label>재생할 영상</label>
+          <input type="file" id="t-video" accept="video/*" required />
+          <div style="margin-top:16px"><button type="submit" id="add-btn">추가</button></div>
+        </form>
+        <p class="muted" style="margin:12px 0 0">추가 후 아래 <b>발행</b>을 눌러야 실제 뷰어에 반영됩니다.</p>
+      </section>
+
+      <section class="card">
+        <h2>등록된 도판 <span id="count" class="muted"></span></h2>
+        <div id="list"><p class="muted">불러오는 중…</p></div>
+      </section>
+
+      <section class="card">
+        <h2>발행</h2>
+        <p class="muted">이미지들로 인식 데이터(targets.mind)를 만들어 클라우드에 올립니다. 도판을 추가·삭제한 뒤 반드시 한 번 눌러 주세요.</p>
+        <progress id="pub-progress" class="hidden" max="100" value="0"></progress>
+        <div style="margin-top:14px"><button id="publish-btn">발행하기</button></div>
+        <p class="muted" id="pub-note" style="margin:10px 0 0"></p>
+      </section>
+    </div>
+  </main>
+
+  <div id="status"></div>
+
+  <script type="module">
+    const $ = (s) => document.querySelector(s);
+    const bucket = window.MEDIA_BUCKET || "media";
+    let sb, images, videos; // storage 폴더 접두어
+
+    const toast = (msg, ms = 2600) => {
+      const el = $("#status"); el.textContent = msg; el.classList.add("show");
+      clearTimeout(toast._t); toast._t = setTimeout(() => el.classList.remove("show"), ms);
+    };
+
+    if (!window.SUPABASE_URL || window.SUPABASE_URL.includes("YOUR-PROJECT")) {
+      $("#login-view").classList.remove("hidden");
+      $("#login-error").textContent = "먼저 site/config.js 에 Supabase 접속 정보를 입력하세요.";
+      throw new Error("config.js 미설정");
+    }
+
+    const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+    sb = createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+
+    const publicUrl = (path) => sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+    const extOf = (name) => { const m = /\.([a-z0-9]+)$/i.exec(name); return m ? m[1].toLowerCase() : "bin"; };
+
+    // ── 인증 상태에 따라 화면 전환 ──────────────────────────────
+    const render = async (session) => {
+      const authed = !!session;
+      $("#login-view").classList.toggle("hidden", authed);
+      $("#admin-view").classList.toggle("hidden", !authed);
+      $("#logout").classList.toggle("hidden", !authed);
+      if (authed) await loadList();
+    };
+
+    sb.auth.onAuthStateChange((_e, session) => { render(session); });
+    render((await sb.auth.getSession()).data.session);
+
+    // ── 로그인 / 로그아웃 ──────────────────────────────────────
+    $("#login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("#login-error").textContent = "";
+      const { error } = await sb.auth.signInWithPassword({
+        email: $("#email").value.trim(), password: $("#password").value,
+      });
+      if (error) $("#login-error").textContent = "로그인 실패: " + error.message;
+    });
+    $("#logout").addEventListener("click", () => sb.auth.signOut());
+
+    // ── 목록 ───────────────────────────────────────────────────
+    async function loadList() {
+      const list = $("#list");
+      const { data: rows, error } = await sb.from("targets").select("*").order("created_at", { ascending: true });
+      if (error) { list.innerHTML = `<p class="muted" style="color:#ef4444">불러오기 실패: ${error.message}</p>`; return; }
+      $("#count").textContent = rows.length ? `(${rows.length}개)` : "";
+      if (!rows.length) { list.innerHTML = `<p class="muted">아직 없습니다. 위에서 도판을 추가하세요.</p>`; return; }
+      list.innerHTML = "";
+      for (const r of rows) {
+        const div = document.createElement("div");
+        div.className = "row";
+        const published = r.mind_index !== null && r.mind_index !== undefined;
+        div.innerHTML = `
+          <img src="${publicUrl(r.image_path)}" alt="" />
+          <div class="meta">
+            <b>${r.name || "(이름 없음)"}</b>
+            <small>${r.video_path.split("/").pop()}</small>
+          </div>
+          <span class="badge ${published ? "" : "pending"}">${published ? "발행됨" : "미발행"}</span>
+          <button class="danger" data-id="${r.id}">삭제</button>`;
+        div.querySelector("button").addEventListener("click", () => removeTarget(r));
+        list.appendChild(div);
+      }
+    }
+
+    // ── 추가 ───────────────────────────────────────────────────
+    $("#add-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const imgFile = $("#t-image").files[0];
+      const vidFile = $("#t-video").files[0];
+      if (!imgFile || !vidFile) return;
+      const btn = $("#add-btn"); btn.disabled = true; btn.textContent = "업로드 중…";
+      try {
+        const id = crypto.randomUUID();
+        const imagePath = `images/${id}.${extOf(imgFile.name)}`;
+        const videoPath = `videos/${id}.${extOf(vidFile.name)}`;
+
+        // 이미지 종횡비 계산 (a-video 높이 = height/width)
+        const aspect = await new Promise((res, rej) => {
+          const im = new Image();
+          im.onload = () => res(im.naturalHeight / im.naturalWidth);
+          im.onerror = rej;
+          im.src = URL.createObjectURL(imgFile);
+        });
+
+        let up = await sb.storage.from(bucket).upload(imagePath, imgFile, { upsert: true, contentType: imgFile.type });
+        if (up.error) throw up.error;
+        up = await sb.storage.from(bucket).upload(videoPath, vidFile, { upsert: true, contentType: vidFile.type });
+        if (up.error) throw up.error;
+
+        const ins = await sb.from("targets").insert({
+          name: $("#t-name").value.trim() || null,
+          image_path: imagePath, video_path: videoPath, aspect,
+        });
+        if (ins.error) throw ins.error;
+
+        e.target.reset();
+        toast("추가됨 — ‘발행’을 눌러 반영하세요");
+        await loadList();
+      } catch (err) {
+        toast("추가 실패: " + (err.message || err));
+      } finally {
+        btn.disabled = false; btn.textContent = "추가";
+      }
+    });
+
+    // ── 삭제 ───────────────────────────────────────────────────
+    async function removeTarget(r) {
+      if (!confirm(`"${r.name || "이름 없음"}" 을 삭제할까요?`)) return;
+      try {
+        await sb.storage.from(bucket).remove([r.image_path, r.video_path]);
+        const del = await sb.from("targets").delete().eq("id", r.id);
+        if (del.error) throw del.error;
+        toast("삭제됨 — ‘발행’을 눌러 반영하세요");
+        await loadList();
+      } catch (err) {
+        toast("삭제 실패: " + (err.message || err));
+      }
+    }
+
+    // ── 발행: 브라우저에서 targets.mind 컴파일 후 업로드 ─────────
+    const loadImage = (url) => new Promise((res, rej) => {
+      const im = new Image(); im.crossOrigin = "anonymous";
+      im.onload = () => res(im); im.onerror = () => rej(new Error("이미지 로드 실패: " + url));
+      im.src = url;
+    });
+
+    $("#publish-btn").addEventListener("click", async () => {
+      const btn = $("#publish-btn"); const prog = $("#pub-progress"); const note = $("#pub-note");
+      if (!window.MINDAR || !window.MINDAR.IMAGE || !window.MINDAR.IMAGE.Compiler) {
+        note.textContent = "컴파일러 로드 실패 — 새로고침 후 다시 시도하세요."; return;
+      }
+      btn.disabled = true; note.textContent = ""; prog.classList.remove("hidden"); prog.value = 0;
+      try {
+        const { data: rows, error } = await sb.from("targets").select("*").order("created_at", { ascending: true });
+        if (error) throw error;
+        if (!rows.length) { note.textContent = "발행할 도판이 없습니다."; return; }
+
+        note.textContent = "이미지 불러오는 중…";
+        const imgs = [];
+        for (const r of rows) imgs.push(await loadImage(publicUrl(r.image_path)));
+
+        note.textContent = "인식 데이터 컴파일 중… (이미지가 많으면 수십 초 걸릴 수 있습니다)";
+        const compiler = new window.MINDAR.IMAGE.Compiler();
+        await compiler.compileImageTargets(imgs, (p) => { prog.value = Math.round(p); });
+        const buffer = compiler.exportData();
+
+        note.textContent = "업로드 중…";
+        const up = await sb.storage.from(bucket).upload("targets.mind", new Blob([buffer]), {
+          upsert: true, contentType: "application/octet-stream",
+        });
+        if (up.error) throw up.error;
+
+        // mind_index 를 컴파일 순서대로 기록 (뷰어가 이 순서로 매핑)
+        for (let i = 0; i < rows.length; i++) {
+          const u = await sb.from("targets").update({ mind_index: i }).eq("id", rows[i].id);
+          if (u.error) throw u.error;
+        }
+
+        prog.value = 100;
+        note.textContent = `발행 완료 — 도판 ${rows.length}개. 뷰어에서 바로 사용할 수 있습니다.`;
+        toast("발행 완료");
+        await loadList();
+      } catch (err) {
+        note.textContent = "발행 실패: " + (err.message || err);
+      } finally {
+        btn.disabled = false;
+        setTimeout(() => prog.classList.add("hidden"), 1200);
+      }
+    });
+  </script>
+</body>
+</html>
