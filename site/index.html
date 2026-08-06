@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Web Viewer</title>
   <script src="./config.js"></script>
   <script src="./vendor/aframe.min.js"></script>
@@ -19,6 +19,9 @@
     }
     #header h1 { margin: 0; font-size: 19px; font-weight: 700; }
     #header p { margin: 4px 0 0; font-size: 13px; opacity: .85; }
+    /* 도판을 인식하면 안내 문구를 비켜준다 (영상이 가려지지 않도록) */
+    #header { transition: opacity .3s; }
+    body.tracking #header { opacity: 0; }
     #message {
       position: fixed; inset: 0; z-index: 10; display: none;
       align-items: center; justify-content: center; text-align: center;
@@ -35,6 +38,10 @@
       background: #fff; color: #111;
     }
     #splash .hint { font-size: 13px; opacity: .7; max-width: 260px; line-height: 1.6; }
+    /* AR 씬(embedded)은 부모의 크기를 따른다. 이 컨테이너에 크기가 없으면
+       캔버스 높이가 0이 되어 카메라 위에 영상이 그려지지 않는다. */
+    #scene-root { position: fixed; inset: 0; }
+    #scene-root .a-canvas { display: block; }
     .a-enter-vr, .a-enter-ar { display: none !important; }
   </style>
 </head>
@@ -62,10 +69,12 @@
         this.el.addEventListener("targetFound", () => {
           const v = this.data.video;
           v.dataset.onTarget = "1";
+          document.body.classList.add("tracking");
           v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
         });
         this.el.addEventListener("targetLost", () => {
           delete this.data.video.dataset.onTarget;
+          document.body.classList.remove("tracking");
           this.data.video.pause();
         });
       },

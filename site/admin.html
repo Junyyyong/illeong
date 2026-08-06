@@ -258,13 +258,25 @@
         if (error) throw error;
         if (!rows.length) { note.textContent = "발행할 도판이 없습니다."; return; }
 
-        note.textContent = "이미지 불러오는 중…";
         const imgs = [];
-        for (const r of rows) imgs.push(await loadImage(publicUrl(r.image_path)));
+        for (const r of rows) {
+          note.textContent = `이미지 불러오는 중… (${imgs.length + 1}/${rows.length})`;
+          imgs.push(await loadImage(publicUrl(r.image_path)));
+        }
 
-        note.textContent = "인식 데이터 컴파일 중… (이미지가 많으면 수십 초 걸릴 수 있습니다)";
+        // 컴파일은 도판 1장당 수십 초까지 걸린다(정상). 진행률로 살아있음을 계속 보여준다.
+        const t0 = Date.now();
+        const tick = setInterval(() => {
+          const sec = Math.round((Date.now() - t0) / 1000);
+          note.textContent = `인식 데이터 만드는 중… ${prog.value}% · ${sec}초 경과`
+            + ` (도판 ${rows.length}장, 창을 닫지 마세요)`;
+        }, 500);
         const compiler = new window.MINDAR.IMAGE.Compiler();
-        await compiler.compileImageTargets(imgs, (p) => { prog.value = Math.round(p); });
+        try {
+          await compiler.compileImageTargets(imgs, (p) => { prog.value = Math.round(p); });
+        } finally {
+          clearInterval(tick);
+        }
         const buffer = compiler.exportData();
 
         note.textContent = "업로드 중…";
