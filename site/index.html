@@ -42,6 +42,35 @@
        캔버스 높이가 0이 되어 카메라 위에 영상이 그려지지 않는다. */
     #scene-root { position: fixed; inset: 0; }
     #scene-root .a-canvas { display: block; }
+
+    /* 조작 버튼: 가장자리에만 두고, 나머지 화면은 건드리지 않는다 */
+    .ctl {
+      position: fixed; z-index: 31; appearance: none; border: 0; cursor: pointer;
+      color: #fff; background: rgba(0, 0, 0, .55); -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px); border-radius: 999px; font-weight: 600; display: none;
+    }
+    #sound-btn {
+      top: calc(12px + env(safe-area-inset-top)); right: 12px;
+      width: 44px; height: 44px; font-size: 18px; line-height: 1;
+    }
+    #close-btn {
+      top: calc(12px + env(safe-area-inset-top)); left: 12px;
+      width: 44px; height: 44px; font-size: 17px; line-height: 1;
+    }
+    #pin-btn {
+      left: 50%; transform: translateX(-50%);
+      bottom: calc(24px + env(safe-area-inset-bottom));
+      padding: 12px 22px; font-size: 15px;
+    }
+    body.started #sound-btn { display: block; }
+    body.tracking:not(.pinned) #pin-btn { display: block; }
+    body.pinned #close-btn { display: block; }
+
+    /* 계속 보기: 보던 영상을 전체화면으로 승격 */
+    #pinned { position: fixed; inset: 0; z-index: 30; display: none; background: #000; }
+    body.pinned #pinned { display: block; }
+    #pinned video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+
     .a-enter-vr, .a-enter-ar { display: none !important; }
   </style>
 </head>
@@ -60,7 +89,15 @@
 
   <div id="scene-root"></div>
 
+  <div id="pinned"></div>
+  <button id="sound-btn" class="ctl" aria-label="소리 켜기/끄기">🔊</button>
+  <button id="close-btn" class="ctl" aria-label="닫고 카메라로 돌아가기">✕</button>
+  <button id="pin-btn" class="ctl">계속 보기</button>
+
   <script>
+    // 여러 스크립트가 공유하는 상태 (모듈 스크립트에서도 접근한다)
+    window.ARState = { pinned: null, home: null, soundOn: true };
+
     // 타깃을 찾으면 영상 재생(소리 재생이 막히면 무음으로라도), 놓치면 일시정지.
     // A-Frame 컴포넌트는 씬이 주입되기 전에 미리 등록해 둔다.
     AFRAME.registerComponent("ar-video", {
@@ -70,12 +107,16 @@
           const v = this.data.video;
           v.dataset.onTarget = "1";
           document.body.classList.add("tracking");
+          // '계속 보기'로 띄운 영상은 카메라가 흔들려도 AR이 건드리지 않는다
+          if (v === window.ARState.pinned) return;
           v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
         });
         this.el.addEventListener("targetLost", () => {
-          delete this.data.video.dataset.onTarget;
+          const v = this.data.video;
+          delete v.dataset.onTarget;
           document.body.classList.remove("tracking");
-          this.data.video.pause();
+          if (v === window.ARState.pinned) return;
+          v.pause();
         });
       },
     });
@@ -146,6 +187,17 @@
       ${entities}
     </a-scene>`;
 
+    const S = window.ARState;
+
+    // ── 소리: 상태를 한 곳에서 관리한다.
+    // (자동 해제가 사용자의 선택을 덮어쓰지 않도록 항상 이 상태를 따른다)
+    const setSound = (on) => {
+      S.soundOn = on;
+      for (const v of document.querySelectorAll("video")) v.muted = !on;
+      $("#sound-btn").textContent = on ? "🔊" : "🔇";
+    };
+    $("#sound-btn").addEventListener("click", () => setSound(!S.soundOn));
+
     // 첫 터치에서 소리 재생 제한 해제 (iOS 등)
     const unlock = () => {
       document.removeEventListener("pointerdown", unlock);
@@ -154,13 +206,47 @@
           const p = v.play();
           if (p) p.then(() => { if (!v.dataset.onTarget) { v.pause(); v.currentTime = 0; } }).catch(() => {});
         }
-        v.muted = false;
+        v.muted = !S.soundOn;
       }
     };
+
+    // ── 계속 보기: 보던 영상을 그대로 전체화면으로 승격한다.
+    // 새 요소를 만들지 않고 같은 요소를 옮기므로 재버퍼링도, 재다운로드도 없다.
+    // (요소를 옮기면 일부 브라우저가 재생을 끊으므로 위치를 복원하고 다시 재생한다)
+    const moveKeepingPlayback = (v, parent) => {
+      const t = v.currentTime;
+      parent.appendChild(v);
+      if (Math.abs(v.currentTime - t) > 0.05) v.currentTime = t;
+      v.muted = !S.soundOn;
+    };
+
+    $("#pin-btn").addEventListener("click", () => {
+      const v = document.querySelector("a-assets video[data-on-target]");
+      if (!v || S.pinned) return;
+      S.pinned = v;
+      S.home = v.parentNode;
+      v.setAttribute("controls", "");        // 전체화면에서는 일시정지·탐색이 가능하게
+      moveKeepingPlayback(v, $("#pinned"));
+      document.body.classList.add("pinned");
+      v.play().catch(() => {});
+    });
+
+    $("#close-btn").addEventListener("click", () => {
+      const v = S.pinned;
+      if (!v) return;
+      v.removeAttribute("controls");
+      moveKeepingPlayback(v, S.home);
+      S.pinned = null;
+      document.body.classList.remove("pinned");
+      // 닫는 순간 도판이 아직 보이고 있으면 이어서 재생, 아니면 정지
+      if (v.dataset.onTarget) v.play().catch(() => {}); else v.pause();
+    });
 
     const startAR = () => {
       $("#splash").style.display = "none";
       $("#scene-root").innerHTML = sceneHTML;
+      document.body.classList.add("started");
+      setSound(true);
       document.addEventListener("pointerdown", unlock);
       $("#scene-root").querySelector("a-scene").addEventListener("arError", () => {
         showMessage("카메라를 켤 수 없습니다. 브라우저의 카메라 권한을 허용한 뒤 새로고침해 주세요.");
