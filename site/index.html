@@ -70,6 +70,16 @@
     #pinned { position: fixed; inset: 0; z-index: 30; display: none; background: #000; }
     body.pinned #pinned { display: block; }
     #pinned video { width: 100%; height: 100%; object-fit: contain; background: #000; }
+    /* 음악은 보여줄 화면이 없으므로 재생 카드를 대신 띄운다 */
+    #pinned-art {
+      display: none; position: absolute; inset: 0;
+      align-items: center; justify-content: center; font-size: 96px;
+    }
+    body.pinned.audio #pinned-art { display: flex; }
+    #pinned audio {
+      position: absolute; left: 50%; bottom: 14%; transform: translateX(-50%);
+      width: min(88%, 420px);
+    }
 
     .a-enter-vr, .a-enter-ar { display: none !important; }
   </style>
@@ -89,7 +99,7 @@
 
   <div id="scene-root"></div>
 
-  <div id="pinned"></div>
+  <div id="pinned"><div id="pinned-art">🎵</div></div>
   <button id="sound-btn" class="ctl" aria-label="소리 켜기/끄기">🔊</button>
   <button id="close-btn" class="ctl" aria-label="닫고 카메라로 돌아가기">✕</button>
   <button id="pin-btn" class="ctl">계속 보기</button>
@@ -107,6 +117,8 @@
           const v = this.data.video;
           v.dataset.onTarget = "1";
           document.body.classList.add("tracking");
+          document.getElementById("pin-btn").textContent =
+            v.tagName === "AUDIO" ? "계속 듣기" : "계속 보기";
           // '계속 보기'로 띄운 영상은 카메라가 흔들려도 AR이 건드리지 않는다
           if (v === window.ARState.pinned) return;
           v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
@@ -165,16 +177,38 @@
 
     const mindUrl = publicUrl("targets.mind");
 
-    // 씬 구성
-    const assets = rows.map((r, i) =>
-      `<video id="vid${i}" src="${escAttr(publicUrl(r.video_path))}" preload="auto" loop playsinline webkit-playsinline crossorigin="anonymous"></video>`
-    ).join("\n      ");
+    // 재생 파일이 음악인지 영상인지는 확장자로 판별한다 (DB 변경 불필요)
+    const isAudio = (path) => /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|weba)$/i.test(path);
 
-    const entities = rows.map((r, i) =>
-      `<a-entity mindar-image-target="targetIndex: ${r.mind_index}" ar-video="video: #vid${i}">
-        <a-video src="#vid${i}" position="0 0 0" width="1" height="${Number(r.aspect || 1).toFixed(4)}"></a-video>
-      </a-entity>`
-    ).join("\n      ");
+    // 음악일 때 도판 위에 띄우는 재생 표시.
+    // 글꼴·이미지에 의존하지 않도록 도형만으로 만든 이퀄라이저 막대.
+    const audioIndicator = (h) => {
+      const bar = (x, to, dur) =>
+        `<a-box position="${x} 0 0.01" width="0.05" height="0.08" depth="0.004" color="#fff"
+                animation="property: scale; to: 1 ${to} 1; dir: alternate; loop: true; dur: ${dur}; easing: easeInOutSine"></a-box>`;
+      return `<a-plane position="0 0 0" width="1" height="${h}" color="#000" opacity="0.45"></a-plane>
+        ${bar(-0.1, 2.6, 520)}
+        ${bar(0, 4, 700)}
+        ${bar(0.1, 3.2, 610)}`;
+    };
+
+    // 씬 구성
+    const assets = rows.map((r, i) => {
+      const src = escAttr(publicUrl(r.video_path));
+      return isAudio(r.video_path)
+        ? `<audio id="vid${i}" src="${src}" preload="auto" loop crossorigin="anonymous"></audio>`
+        : `<video id="vid${i}" src="${src}" preload="auto" loop playsinline webkit-playsinline crossorigin="anonymous"></video>`;
+    }).join("\n      ");
+
+    const entities = rows.map((r, i) => {
+      const h = Number(r.aspect || 1).toFixed(4);
+      const content = isAudio(r.video_path)
+        ? audioIndicator(h)
+        : `<a-video src="#vid${i}" position="0 0 0" width="1" height="${h}"></a-video>`;
+      return `<a-entity mindar-image-target="targetIndex: ${r.mind_index}" ar-video="video: #vid${i}">
+        ${content}
+      </a-entity>`;
+    }).join("\n      ");
 
     const sceneHTML = `
     <a-scene mindar-image="imageTargetSrc: ${escAttr(mindUrl)}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 0.001"
@@ -221,13 +255,14 @@
     };
 
     $("#pin-btn").addEventListener("click", () => {
-      const v = document.querySelector("a-assets video[data-on-target]");
+      const v = document.querySelector("a-assets [data-on-target]");
       if (!v || S.pinned) return;
       S.pinned = v;
       S.home = v.parentNode;
       v.setAttribute("controls", "");        // 전체화면에서는 일시정지·탐색이 가능하게
       moveKeepingPlayback(v, $("#pinned"));
       document.body.classList.add("pinned");
+      document.body.classList.toggle("audio", v.tagName === "AUDIO");
       v.play().catch(() => {});
     });
 
@@ -237,7 +272,7 @@
       v.removeAttribute("controls");
       moveKeepingPlayback(v, S.home);
       S.pinned = null;
-      document.body.classList.remove("pinned");
+      document.body.classList.remove("pinned", "audio");
       // 닫는 순간 도판이 아직 보이고 있으면 이어서 재생, 아니면 정지
       if (v.dataset.onTarget) v.play().catch(() => {}); else v.pause();
     });

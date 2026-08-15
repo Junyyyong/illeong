@@ -91,8 +91,9 @@
           <input type="text" id="t-name" placeholder="선택 사항" />
           <label>도판 이미지 (인식할 사진)</label>
           <input type="file" id="t-image" accept="image/*" required />
-          <label>재생할 영상</label>
-          <input type="file" id="t-video" accept="video/*" required />
+          <label>재생할 영상 또는 음악</label>
+          <input type="file" id="t-video" accept="video/*,audio/*" required />
+          <p class="muted" style="margin:6px 0 0">음악 파일(mp3·m4a·wav 등)을 올리면 도판을 비출 때 음악이 재생됩니다.</p>
           <div style="margin-top:16px"><button type="submit" id="add-btn">추가</button></div>
         </form>
         <p class="muted" style="margin:12px 0 0">추가 후 아래 <b>발행</b>을 눌러야 실제 뷰어에 반영됩니다.</p>
@@ -136,6 +137,8 @@
 
     const publicUrl = (path) => sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
     const extOf = (name) => { const m = /\.([a-z0-9]+)$/i.exec(name); return m ? m[1].toLowerCase() : "bin"; };
+    // 재생 파일이 음악인지는 확장자로 판별한다 (뷰어도 같은 규칙을 쓴다)
+    const isAudio = (path) => /\.(mp3|m4a|aac|wav|ogg|oga|opus|flac|weba)$/i.test(path);
 
     // ── 인증 상태에 따라 화면 전환 ──────────────────────────────
     const render = async (session) => {
@@ -176,7 +179,7 @@
           <img src="${publicUrl(r.image_path)}" alt="" />
           <div class="meta">
             <b>${r.name || "(이름 없음)"}</b>
-            <small>${r.video_path.split("/").pop()}</small>
+            <small>${isAudio(r.video_path) ? "🎵 음악" : "🎬 영상"} · ${r.video_path.split("/").pop()}</small>
           </div>
           <span class="badge ${published ? "" : "pending"}">${published ? "발행됨" : "미발행"}</span>
           <button class="danger" data-id="${r.id}">삭제</button>`;
