@@ -190,28 +190,154 @@
       }
     }
 
+    // ── 업로드 전 영상 자동 축소 (폰 감상용 720p) ───────────────
+    // 브라우저가 직접 H.264 MP4로 다시 인코딩한다. MP4로 녹화할 수 없는
+    // 브라우저에서는 변환하지 않는다 — WebM으로 저장하면 아이폰에서 재생이
+    // 안 되므로, 조용히 깨지느니 안내를 띄우는 편이 낫다.
+    const MAX_UPLOAD = 50 * 1024 * 1024;
+    const TARGET_H = 720;
+    const mb = (n) => (n / 1024 / 1024).toFixed(0);
+
+    const MP4_TYPES = [
+      "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+      "video/mp4;codecs=avc1.4d002a,mp4a.40.2",
+      "video/mp4;codecs=avc1,mp4a.40.2",
+      "video/mp4",
+    ];
+    const mp4RecorderType = () =>
+      (window.MediaRecorder && MP4_TYPES.find((t) => MediaRecorder.isTypeSupported(t))) || null;
+
+    const loadVideo = (file) => new Promise((res, rej) => {
+      const v = document.createElement("video");
+      v.preload = "auto"; v.playsInline = true;
+      v.onloadeddata = () => res(v);              // 크기 + 첫 프레임까지 확보
+      v.onerror = () => rej(new Error("영상을 읽을 수 없습니다"));
+      v.src = URL.createObjectURL(file);
+    });
+
+    async function shrinkVideo(file, onProgress) {
+      const type = mp4RecorderType();
+      if (!type) throw new Error("UNSUPPORTED");
+
+      const v = await loadVideo(file);
+      const scale = Math.min(1, TARGET_H / v.videoHeight);
+      // 인코더가 짝수 크기를 요구하는 경우가 있어 2의 배수로 맞춘다
+      const w = Math.max(2, Math.round(v.videoWidth * scale / 2) * 2);
+      const h = Math.max(2, Math.round(v.videoHeight * scale / 2) * 2);
+
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(v, 0, 0, w, h);
+
+      // 소리는 Web Audio로 빼낸다. 스피커(ctx.destination)에는 연결하지 않으므로
+      // 변환 중 소리가 새지 않으면서 녹화에는 그대로 담긴다.
+      const actx = new (window.AudioContext || window.webkitAudioContext)();
+      await actx.resume().catch(() => {});
+      const dest = actx.createMediaStreamDestination();
+      let audioTracks = [];
+      try {
+        actx.createMediaElementSource(v).connect(dest);
+        audioTracks = dest.stream.getAudioTracks();
+      } catch (_) {
+        v.muted = true;                            // 소리를 못 빼내면 스피커로도 내보내지 않는다
+      }
+
+      const stream = new MediaStream([
+        canvas.captureStream(30).getVideoTracks()[0],
+        ...audioTracks,
+      ]);
+      const rec = new MediaRecorder(stream, {
+        mimeType: type, videoBitsPerSecond: 2_500_000, audioBitsPerSecond: 128_000,
+      });
+      const parts = [];
+      rec.ondataavailable = (e) => { if (e.data.size) parts.push(e.data); };
+      const stopped = new Promise((res) => { rec.onstop = res; });
+
+      rec.start(1000);
+      const draw = () => {
+        if (v.ended) return;
+        ctx.drawImage(v, 0, 0, w, h);
+        onProgress(v.duration ? v.currentTime / v.duration : 0);
+        if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(draw);
+        else requestAnimationFrame(draw);
+      };
+      try {
+        await v.play();
+      } catch (_) {
+        throw new Error("브라우저가 변환용 재생을 막았습니다. 다시 시도하거나 직접 줄여서 올려 주세요.");
+      }
+      draw();
+      // 재생이 끝나면 종료. 어떤 이유로 ended가 오지 않아도 멈추도록 여유를 둔다.
+      await new Promise((res) => {
+        v.onended = res;
+        setTimeout(res, (v.duration || 60) * 1000 * 1.5 + 30000);
+      });
+      rec.stop();
+      await stopped;
+      actx.close().catch(() => {});
+      URL.revokeObjectURL(v.src);
+
+      const blob = new Blob(parts, { type: "video/mp4" });
+      if (!blob.size || blob.size >= file.size) return file;   // 되레 커졌으면 원본 사용
+      const base = file.name.replace(/\.[^.]+$/, "");
+      return new File([blob], `${base}-720p.mp4`, { type: "video/mp4" });
+    }
+
     // ── 추가 ───────────────────────────────────────────────────
     $("#add-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const imgFile = $("#t-image").files[0];
-      const vidFile = $("#t-video").files[0];
+      let vidFile = $("#t-video").files[0];
       if (!imgFile || !vidFile) return;
 
-      // Supabase 무료 플랜은 파일당 50MB가 상한이다. 올리기 전에 미리 알려준다.
-      const MAX_UPLOAD = 50 * 1024 * 1024;
-      const mb = (n) => (n / 1024 / 1024).toFixed(0);
-      const tooBig = [imgFile, vidFile].find((f) => f.size > MAX_UPLOAD);
-      if (tooBig) {
-        $("#add-note").textContent =
-          `"${tooBig.name}" 이(가) ${mb(tooBig.size)}MB로 너무 큽니다 (최대 50MB).`
-          + ` 영상을 720p·H.264로 다시 저장하면 보통 20~40MB로 줄어듭니다.`
-          + ` 파일이 작을수록 관람자에게도 빨리 뜹니다.`;
-        return;
-      }
-      $("#add-note").textContent = "";
+      const note = $("#add-note");
+      note.textContent = "";
+      const btn = $("#add-btn"); btn.disabled = true;
 
-      const btn = $("#add-btn"); btn.disabled = true; btn.textContent = "업로드 중…";
       try {
+        // 영상이 크거나 720p를 넘으면 올리기 전에 줄인다 (음악은 그대로 둔다)
+        if (!isAudio(vidFile.name)) {
+          let tooTall = false;
+          try {
+            const probe = await loadVideo(vidFile);
+            tooTall = probe.videoHeight > TARGET_H;
+            URL.revokeObjectURL(probe.src);
+          } catch (_) { /* 못 읽으면 아래 용량 검사로 넘긴다 */ }
+
+          if (tooTall || vidFile.size > MAX_UPLOAD * 0.9) {
+            if (!mp4RecorderType()) {
+              note.textContent =
+                `이 브라우저는 영상 자동 변환을 지원하지 않습니다.`
+                + ` Chrome이나 Edge에서 시도하시거나, HandBrake의 "Fast 720p30"으로`
+                + ` 직접 줄인 뒤 올려주세요.`;
+              return;
+            }
+            const t0 = Date.now();
+            btn.textContent = "변환 중…";
+            const before = vidFile.size;
+            vidFile = await shrinkVideo(vidFile, (p) => {
+              note.style.color = "";
+              note.textContent = `영상을 720p로 변환 중… ${Math.round(p * 100)}%`
+                + ` (${Math.round((Date.now() - t0) / 1000)}초 경과 · 이 탭을 벗어나지 마세요)`;
+            });
+            note.textContent = vidFile.size < before
+              ? `변환 완료: ${mb(before)}MB → ${mb(vidFile.size)}MB`
+              : `이미 충분히 작아 원본을 그대로 사용합니다.`;
+          }
+        }
+
+        // 그래도 상한을 넘으면 업로드하지 않는다
+        const tooBig = [imgFile, vidFile].find((f) => f.size > MAX_UPLOAD);
+        if (tooBig) {
+          note.style.color = "#ef4444";
+          note.textContent =
+            `"${tooBig.name}" 이(가) ${mb(tooBig.size)}MB로 너무 큽니다 (최대 50MB).`
+            + ` HandBrake의 "Fast 720p30"으로 한 번 더 줄여 주세요.`;
+          return;
+        }
+
+        btn.textContent = "업로드 중…";
         const id = crypto.randomUUID();
         const imagePath = `images/${id}.${extOf(imgFile.name)}`;
         const videoPath = `videos/${id}.${extOf(vidFile.name)}`;
