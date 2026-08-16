@@ -209,9 +209,11 @@
     // 씬 구성
     const assets = rows.map((r, i) => {
       const src = escAttr(publicUrl(r.video_path));
+      // preload는 metadata까지만. auto로 두면 도판 수만큼(예: 18개) 영상을
+      // 한꺼번에 내려받아 폰이 버티지 못한다. 실제 파일은 인식된 뒤에 받는다.
       return isAudio(r.video_path)
-        ? `<audio id="vid${i}" src="${src}" preload="auto" loop crossorigin="anonymous"></audio>`
-        : `<video id="vid${i}" src="${src}" preload="auto" loop playsinline webkit-playsinline crossorigin="anonymous"></video>`;
+        ? `<audio id="vid${i}" src="${src}" preload="metadata" loop crossorigin="anonymous"></audio>`
+        : `<video id="vid${i}" src="${src}" preload="metadata" loop playsinline webkit-playsinline crossorigin="anonymous"></video>`;
     }).join("\n      ");
 
     const entities = rows.map((r, i) => {
@@ -225,7 +227,7 @@
     }).join("\n      ");
 
     const sceneHTML = `
-    <a-scene mindar-image="imageTargetSrc: ${escAttr(mindUrl)}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 0.001"
+    <a-scene mindar-image="imageTargetSrc: ${escAttr(mindUrl)}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; warmupTolerance: 2; missTolerance: 12"
              color-space="sRGB" renderer="colorManagement: true" embedded
              vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
       <a-assets>
@@ -246,15 +248,15 @@
     };
     $("#sound-btn").addEventListener("click", () => setSound(!S.soundOn));
 
-    // 첫 터치에서 소리 재생 제한 해제 (iOS 등)
+    // iOS 등은 사용자의 조작이 있어야 소리가 난다.
+    // 예전에는 첫 터치에서 모든 영상을 재생해 잠금을 풀었는데, 도판이 많으면
+    // 그 수만큼 영상을 동시에 받아버려 폰이 멈춘다.
+    // 그래서 '지금 인식 중인' 영상 하나만 소리를 켠다.
     const unlock = () => {
-      document.removeEventListener("pointerdown", unlock);
-      for (const v of document.querySelectorAll("a-assets video")) {
-        if (v.paused) {
-          const p = v.play();
-          if (p) p.then(() => { if (!v.dataset.onTarget) { v.pause(); v.currentTime = 0; } }).catch(() => {});
-        }
-        v.muted = !S.soundOn;
+      const v = document.querySelector("a-assets [data-on-target]");
+      if (v && S.soundOn && v.muted) {
+        v.muted = false;
+        v.play().catch(() => {});
       }
     };
 

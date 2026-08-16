@@ -393,9 +393,10 @@
     });
 
     // 컴파일 입력용으로만 이미지를 줄인다(저장된 원본은 그대로 남는다).
-    // 컴파일 시간은 픽셀 수에 비례하므로, 긴 변을 이 값으로 맞추면 크게 빨라진다.
-    // 인식은 원본 대비 상대 좌표로 이뤄지므로 이 정도 해상도면 인식률 차이가 거의 없다.
-    const COMPILE_MAX_EDGE = 1024;
+    // 컴파일 시간은 픽셀 수에 비례하므로 긴 변을 제한한다.
+    // 다만 너무 줄이면 도판이 화면에서 작게 잡힐 때 쓸 특징점이 부족해져
+    // 인식이 어려워진다. 한 페이지에 도판이 여러 개인 경우가 그렇다.
+    const COMPILE_MAX_EDGE = 1600;
 
     async function shrinkForCompile(img) {
       const longEdge = Math.max(img.naturalWidth, img.naturalHeight);
