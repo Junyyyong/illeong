@@ -96,7 +96,9 @@
           <p class="muted" style="margin:6px 0 0">음악 파일(mp3·m4a·wav 등)을 올리면 도판을 비출 때 음악이 재생됩니다.</p>
           <div style="margin-top:16px"><button type="submit" id="add-btn">추가</button></div>
         </form>
-        <p class="muted" style="margin:12px 0 0">추가 후 아래 <b>발행</b>을 눌러야 실제 뷰어에 반영됩니다.</p>
+        <p id="add-note" style="color:#ef4444; font-size:13px; margin:12px 0 0; line-height:1.6"></p>
+        <p class="muted" style="margin:12px 0 0">추가 후 아래 <b>발행</b>을 눌러야 실제 뷰어에 반영됩니다.
+          파일은 하나당 최대 50MB이며, 작을수록 관람자에게 빨리 뜹니다.</p>
       </section>
 
       <section class="card">
@@ -194,6 +196,20 @@
       const imgFile = $("#t-image").files[0];
       const vidFile = $("#t-video").files[0];
       if (!imgFile || !vidFile) return;
+
+      // Supabase 무료 플랜은 파일당 50MB가 상한이다. 올리기 전에 미리 알려준다.
+      const MAX_UPLOAD = 50 * 1024 * 1024;
+      const mb = (n) => (n / 1024 / 1024).toFixed(0);
+      const tooBig = [imgFile, vidFile].find((f) => f.size > MAX_UPLOAD);
+      if (tooBig) {
+        $("#add-note").textContent =
+          `"${tooBig.name}" 이(가) ${mb(tooBig.size)}MB로 너무 큽니다 (최대 50MB).`
+          + ` 영상을 720p·H.264로 다시 저장하면 보통 20~40MB로 줄어듭니다.`
+          + ` 파일이 작을수록 관람자에게도 빨리 뜹니다.`;
+        return;
+      }
+      $("#add-note").textContent = "";
+
       const btn = $("#add-btn"); btn.disabled = true; btn.textContent = "업로드 중…";
       try {
         const id = crypto.randomUUID();
