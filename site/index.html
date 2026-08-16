@@ -62,59 +62,9 @@
       bottom: calc(24px + env(safe-area-inset-bottom));
       padding: 12px 22px; font-size: 15px;
     }
-    #pick-btn {
-      left: 12px; bottom: calc(24px + env(safe-area-inset-bottom));
-      padding: 12px 18px; font-size: 14px;
-    }
     body.started #sound-btn { display: block; }
-    body.started:not(.pinned) #pick-btn { display: block; }
     body.tracking:not(.pinned) #pin-btn { display: block; }
     body.pinned #close-btn { display: block; }
-
-    /* 지금 어떤 도판만 인식 중인지 알려주는 표시 */
-    #now-viewing {
-      position: fixed; z-index: 6; left: 50%; transform: translateX(-50%);
-      top: calc(64px + env(safe-area-inset-top));
-      padding: 6px 14px; border-radius: 999px; font-size: 12px; color: #fff;
-      background: rgba(0, 0, 0, .55); pointer-events: none; max-width: 76vw;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    #now-viewing:empty { display: none; }
-    body.pinned #now-viewing { display: none; }
-
-    /* 도판 목록 */
-    #picker {
-      position: fixed; inset: 0; z-index: 40; display: none;
-      flex-direction: column; background: #111; color: #fff;
-    }
-    #picker-bar {
-      display: flex; align-items: center; gap: 8px;
-      padding: calc(12px + env(safe-area-inset-top)) 14px 12px;
-      border-bottom: 1px solid #333;
-    }
-    #picker-bar b { flex: 1; font-size: 15px; }
-    #picker-bar button {
-      appearance: none; border: 0; cursor: pointer; border-radius: 999px;
-      padding: 8px 14px; font-size: 13px; font-weight: 600;
-      background: #2a2a2a; color: #fff;
-    }
-    #picker-grid {
-      flex: 1; overflow-y: auto; display: grid; gap: 10px; padding: 14px;
-      grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-      padding-bottom: calc(14px + env(safe-area-inset-bottom));
-    }
-    .pick-item {
-      appearance: none; border: 0; cursor: pointer; padding: 0;
-      background: none; color: #fff; text-align: center;
-    }
-    .pick-item img {
-      width: 100%; aspect-ratio: 1; object-fit: cover;
-      border-radius: 10px; background: #222; display: block;
-    }
-    .pick-item span {
-      display: block; margin-top: 6px; font-size: 11px; opacity: .8;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
 
     /* 계속 보기: 보던 영상을 전체화면으로 승격 */
     #pinned { position: fixed; inset: 0; z-index: 30; display: none; background: #000; }
@@ -153,17 +103,6 @@
   <button id="sound-btn" class="ctl" aria-label="소리 켜기/끄기">🔊</button>
   <button id="close-btn" class="ctl" aria-label="닫고 카메라로 돌아가기">✕</button>
   <button id="pin-btn" class="ctl">계속 보기</button>
-  <button id="pick-btn" class="ctl">도판 고르기</button>
-  <div id="now-viewing"></div>
-
-  <div id="picker">
-    <div id="picker-bar">
-      <b>도판 고르기</b>
-      <button id="picker-all">전체 인식</button>
-      <button id="picker-close">닫기</button>
-    </div>
-    <div id="picker-grid"></div>
-  </div>
 
   <script>
     // 여러 스크립트가 공유하는 상태 (모듈 스크립트에서도 접근한다)
@@ -267,32 +206,26 @@
         ${bar(0.1, 3.2, 610)}`;
     };
 
-    // 씬 구성.
-    // list의 각 항목은 { row, index } — index는 그 .mind 파일 안에서의 순번이다.
-    // 전체 인식이면 발행 때 기록된 mind_index를, 한 도판만 볼 때는 0을 쓴다.
-    const buildScene = (list, srcUrl) => {
-      const assets = list.map(({ row }, i) => {
-        const src = escAttr(publicUrl(row.video_path));
-        return isAudio(row.video_path)
-          ? `<audio id="vid${i}" src="${src}" preload="auto" loop crossorigin="anonymous"></audio>`
-          : `<video id="vid${i}" src="${src}" preload="auto" loop playsinline webkit-playsinline crossorigin="anonymous"></video>`;
-      }).join("\n      ");
+    // 씬 구성
+    const assets = rows.map((r, i) => {
+      const src = escAttr(publicUrl(r.video_path));
+      return isAudio(r.video_path)
+        ? `<audio id="vid${i}" src="${src}" preload="auto" loop crossorigin="anonymous"></audio>`
+        : `<video id="vid${i}" src="${src}" preload="auto" loop playsinline webkit-playsinline crossorigin="anonymous"></video>`;
+    }).join("\n      ");
 
-      const entities = list.map(({ row, index }, i) => {
-        const h = Number(row.aspect || 1).toFixed(4);
-        const content = isAudio(row.video_path)
-          ? audioIndicator(h)
-          : `<a-video src="#vid${i}" position="0 0 0" width="1" height="${h}"></a-video>`;
-        return `<a-entity mindar-image-target="targetIndex: ${index}" ar-video="video: #vid${i}">
+    const entities = rows.map((r, i) => {
+      const h = Number(r.aspect || 1).toFixed(4);
+      const content = isAudio(r.video_path)
+        ? audioIndicator(h)
+        : `<a-video src="#vid${i}" position="0 0 0" width="1" height="${h}"></a-video>`;
+      return `<a-entity mindar-image-target="targetIndex: ${r.mind_index}" ar-video="video: #vid${i}">
         ${content}
       </a-entity>`;
-      }).join("\n      ");
+    }).join("\n      ");
 
-      return sceneShell(srcUrl, assets, entities);
-    };
-
-    const sceneShell = (mindSrc, assets, entities) => `
-    <a-scene mindar-image="imageTargetSrc: ${escAttr(mindSrc)}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 0.001"
+    const sceneHTML = `
+    <a-scene mindar-image="imageTargetSrc: ${escAttr(mindUrl)}; autoStart: true; uiLoading: no; uiError: no; uiScanning: no; filterMinCF: 0.0001; filterBeta: 0.001"
              color-space="sRGB" renderer="colorManagement: true" embedded
              vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
       <a-assets>
@@ -358,71 +291,15 @@
       if (v.dataset.onTarget) v.play().catch(() => {}); else v.pause();
     });
 
-    // ── 씬 장착/교체 ────────────────────────────────────────────
-    // 도판을 하나만 볼 때는 그 도판만 담긴 인식 파일로 통째로 갈아끼운다.
-    // 인식기가 비교할 대상이 1개로 줄어 옆 도판과 헷갈리지 않는다.
-    const mountScene = (html) => {
-      const root = $("#scene-root");
-      const old = root.querySelector("a-scene");
-      if (old) {
-        // 카메라를 확실히 놓아준 뒤 교체한다 (안 그러면 스트림이 남는다)
-        try { old.systems["mindar-image-system"].stop(); } catch (_) {}
-        old.parentNode.removeChild(old);
-      }
-      document.body.classList.remove("tracking");
-      root.innerHTML = html;
-      root.querySelector("a-scene").addEventListener("arError", () => {
-        showMessage("카메라를 켤 수 없습니다. 브라우저의 카메라 권한을 허용한 뒤 새로고침해 주세요.");
-      });
-      setSound(S.soundOn);
-    };
-
-    const showAll = () => {
-      $("#now-viewing").textContent = "";
-      mountScene(buildScene(rows.map((row) => ({ row, index: row.mind_index })), mindUrl));
-    };
-
-    const showOne = async (row) => {
-      const url = publicUrl(`mind/${row.id}.mind`);
-      // 이 기능이 생기기 전에 발행한 도판은 개별 인식 파일이 없다
-      try {
-        const head = await fetch(url, { method: "HEAD" });
-        if (!head.ok) throw new Error("no file");
-      } catch (_) {
-        alert("이 도판은 개별 인식 파일이 아직 없습니다.\n관리자 페이지에서 ‘발행’을 한 번 더 눌러 주세요.");
-        return;
-      }
-      $("#now-viewing").textContent = (row.name || "선택한 도판") + " 만 인식 중";
-      mountScene(buildScene([{ row, index: 0 }], url));
-    };
-
-    // ── 도판 고르기 ─────────────────────────────────────────────
-    const picker = $("#picker");
-    const buildPicker = () => {
-      const grid = $("#picker-grid");
-      grid.innerHTML = "";
-      for (const row of rows) {
-        const b = document.createElement("button");
-        b.className = "pick-item";
-        b.innerHTML = `<img src="${escAttr(publicUrl(row.image_path))}" alt="" />`
-          + `<span>${row.name || "이름 없음"}</span>`;
-        b.addEventListener("click", async () => {
-          picker.style.display = "none";
-          await showOne(row);
-        });
-        grid.appendChild(b);
-      }
-    };
-    $("#pick-btn").addEventListener("click", () => { buildPicker(); picker.style.display = "flex"; });
-    $("#picker-close").addEventListener("click", () => { picker.style.display = "none"; });
-    $("#picker-all").addEventListener("click", () => { picker.style.display = "none"; showAll(); });
-
     const startAR = () => {
       $("#splash").style.display = "none";
+      $("#scene-root").innerHTML = sceneHTML;
       document.body.classList.add("started");
-      S.soundOn = true;
-      showAll();
+      setSound(true);
       document.addEventListener("pointerdown", unlock);
+      $("#scene-root").querySelector("a-scene").addEventListener("arError", () => {
+        showMessage("카메라를 켤 수 없습니다. 브라우저의 카메라 권한을 허용한 뒤 새로고침해 주세요.");
+      });
     };
 
     // 카메라·소리 시작은 사용자 제스처가 있어야 안정적(iOS). 버튼 한 번으로 시작.
