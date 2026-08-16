@@ -113,6 +113,20 @@
     AFRAME.registerComponent("ar-video", {
       schema: { video: { type: "selector" } },
       init() {
+        // 영상 평면은 '도판'이 아니라 '영상' 비율을 따라야 한다.
+        // 실제 영상 크기는 메타데이터가 로드돼야 알 수 있으므로 그때 맞춘다.
+        // (가로폭은 도판 폭에 맞추고, 높이만 영상 비율대로 정한다)
+        const media = this.data.video;
+        const plane = this.el.querySelector("a-video");
+        if (plane && media && media.tagName === "VIDEO") {
+          const fit = () => {
+            if (!media.videoWidth) return;
+            plane.setAttribute("height", (media.videoHeight / media.videoWidth).toFixed(4));
+          };
+          fit();                                        // 이미 로드된 경우
+          media.addEventListener("loadedmetadata", fit); // 아직이면 로드될 때
+        }
+
         this.el.addEventListener("targetFound", () => {
           const v = this.data.video;
           v.dataset.onTarget = "1";
